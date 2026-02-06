@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GeoEspaña - Desafío Cronológico</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+            /* Permitimos el scroll vertical en el cuerpo, pero evitamos el rebote lateral */
+            touch-action: pan-y; 
+            overscroll-behavior-y: none;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        .sortable-item {
+            transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.2s ease, background-color 0.3s ease;
+            cursor: grab;
+            position: relative;
+            z-index: 1;
+            /* Evitamos que el navegador intente hacer scroll nativo al tocar una tarjeta específica */
+            touch-action: none; 
+        }
+
+        .sortable-item.dragging {
+            cursor: grabbing;
+            z-index: 1000; /* Z-index muy alto para que pase por encima del header/footer si es necesario */
+            transform: scale(1.02);
+            box-shadow: 0 25px 30px -5px rgba(0, 0, 0, 0.25);
+            opacity: 0.95;
+            transition: none;
+        }
+
+        .sortable-item.placeholder {
+            opacity: 0.2;
+            background: #cbd5e1;
+            border: 2px dashed #94a3b8;
+            transition: all 0.2s ease;
+        }
+
+        .list-container {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem; /* Gap un poco más pequeño en móvil */
+            padding-bottom: 120px; /* IMPORTANTE: Espacio extra para que el footer no tape el último item */
+        }
+
+        .hidden-screen {
+            display: none !important;
+        }
+
+        /* Ajustes para móviles: textos más compactos */
+        @media (max-width: 640px) {
+            .card-padding { padding: 0.75rem; }
+            .card-title { font-size: 0.9rem; }
+            .card-era { font-size: 0.6rem; }
+        }
+        @media (min-width: 641px) {
+            .card-padding { padding: 1rem; }
+            .card-title { font-size: 1rem; }
+            .card-era { font-size: 0.65rem; }
+            .list-container { gap: 0.75rem; }
+        }
+
+        .success-flash { animation: success-pulse 0.5s ease; }
+        @keyframes success-pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.02); background-color: #ecfdf5; }
+            100% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 overflow-x-hidden">
+
+    <!-- PANTALLA DE INICIO -->
+    <div id="screen-menu" class="min-h-screen flex flex-col items-center justify-center p-6 text-center">
+        <div class="mb-8 space-y-4">
+            <div class="bg-white p-6 rounded-[2.5rem] shadow-xl border border-slate-100 inline-block">
+                <img src="https://blogsaverroes.juntadeandalucia.es/ieslucussolis/files/2023/09/Lucus-logo_clipdrop-background-removal-1024x1024.png" alt="Logo" class="w-24 h-24 object-contain">
+            </div>
+            <h1 class="text-4xl font-black text-slate-800 tracking-tighter">Desafío Cronológico</h1>
+            <p class="text-slate-500 font-bold uppercase tracking-widest text-sm">Geografía • IES Lucus Solis</p>
+        </div>
+
+        <div class="w-full max-w-sm bg-white p-8 rounded-[2rem] shadow-lg border border-slate-100 space-y-4">
+            <div class="text-left">
+                <label class="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Tu Nombre</label>
+                <input type="text" id="input-name" placeholder="Escribe tu nombre..." 
+                    class="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-amber-500 focus:bg-white focus:outline-none font-bold transition-all shadow-inner">
+            </div>
+            <button onclick="startGame()" class="w-full bg-amber-600 hover:bg-amber-700 text-white py-5 rounded-2xl font-black text-xl shadow-xl shadow-amber-100 transition-all active:scale-95">
+                ¡EMPEZAR!
+            </button>
+        </div>
+    </div>
+
+    <!-- PANTALLA DE JUEGO -->
+    <div id="screen-game" class="hidden-screen min-h-screen">
+        <header class="bg-white/90 backdrop-blur-md border-b sticky top-0 z-[50] p-3 shadow-sm">
+            <div class="max-w-2xl mx-auto flex justify-between items-center">
+                <div class="flex items-center gap-2">
+                    <img src="https://blogsaverroes.juntadeandalucia.es/ieslucussolis/files/2023/09/Lucus-logo_clipdrop-background-removal-1024x1024.png" alt="Logo" class="w-8 h-8">
+                    <h2 class="font-black text-slate-800 tracking-tight text-sm md:text-base">GeoEspaña</h2>
+                </div>
+                <div id="player-tag" class="text-[10px] md:text-xs font-black uppercase text-amber-600 bg-amber-50 px-3 py-1 rounded-full border border-amber-100"></div>
+            </div>
+        </header>
+
+        <main class="max-w-2xl mx-auto p-4 space-y-4">
+            <div class="px-1 flex justify-between items-end">
+                <div>
+                    <h3 class="text-lg md:text-xl font-black text-slate-800">Ordena los hechos:</h3>
+                    <p class="text-[10px] md:text-xs text-slate-400 font-medium">Arrastra para ordenar cronológicamente</p>
+                </div>
+                <div id="live-counter" class="hidden bg-slate-100 px-3 py-1 rounded-lg text-xs font-black text-slate-500">Aciertos: --</div>
+            </div>
+
+            <!-- Contenedor con padding extra abajo para el scroll -->
+            <div id="sortable-list" class="list-container"></div>
+        </main>
+
+        <div class="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-md border-t border-slate-100 z-[200]">
+            <div class="max-w-2xl mx-auto flex gap-3">
+                <button onclick="resetGame()" class="p-3 md:p-4 bg-white border-2 border-slate-200 rounded-2xl text-slate-400 hover:bg-slate-50 active:scale-95 transition-transform">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
+                </button>
+                <button onclick="checkResults()" class="flex-1 bg-amber-600 text-white py-3 md:py-4 rounded-2xl font-black text-lg shadow-lg shadow-amber-200 hover:bg-amber-700 active:scale-95 transition-all">
+                    COMPROBAR
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- PANTALLA FINAL -->
+    <div id="screen-result" class="hidden-screen min-h-screen flex flex-col items-center justify-center p-6 text-center bg-white z-[300] relative">
+        <div id="result-icon" class="bg-amber-100 p-8 rounded-full mb-6"></div>
+        <h2 id="result-title" class="text-5xl md:text-6xl font-black text-slate-900 tracking-tighter italic uppercase">¡Resultado!</h2>
+        <div class="mt-4 space-y-1">
+            <p id="result-score" class="text-2xl md:text-3xl font-black text-amber-600"></p>
+            <p id="congrats-text" class="text-lg md:text-xl font-bold text-slate-500 max-w-xs mx-auto"></p>
+        </div>
+        
+        <button onclick="location.reload()" class="mt-10 bg-slate-900 text-white px-10 py-5 rounded-3xl font-black text-xl shadow-2xl hover:bg-slate-800 transition-all active:scale-95">
+            REINTENTAR
+        </button>
+        <p class="mt-8 text-[10px] font-black text-slate-300 uppercase tracking-widest">IES Lucus Solis • Geografía de España</p>
+    </div>
+
+    <script>
+        // --- SONIDOS ---
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playTone(freq, type, duration, vol) {
+            try {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + duration);
+            } catch (e) {}
+        }
+
+        const sounds = {
+            grab: () => playTone(400, 'sine', 0.1, 0.2),
+            move: () => playTone(600, 'sine', 0.05, 0.1),
+            drop: () => playTone(300, 'triangle', 0.15, 0.2),
+            success: () => {
+                playTone(523.25, 'sine', 0.2, 0.2);
+                setTimeout(() => playTone(659.25, 'sine', 0.2, 0.2), 100);
+                setTimeout(() => playTone(783.99, 'sine', 0.4, 0.2), 200);
+            },
+            partial: () => {
+                playTone(440, 'sine', 0.2, 0.2);
+                setTimeout(() => playTone(554.37, 'sine', 0.2, 0.2), 100);
+            },
+            error: () => playTone(220, 'sawtooth', 0.3, 0.1)
+        };
+
+        // --- DATOS ---
+        const EVENTS_DATA = [
+            { id: 1, year: 1712, event: "Vecindario de Campoflorido", era: "Siglo XVIII" },
+            { id: 2, year: 1749, event: "Censo del Marqués de la Ensenada", era: "Siglo XVIII" },
+            { id: 3, year: 1787, event: "Censo de Floridablanca", era: "Siglo XVIII" },
+            { id: 4, year: 1857, event: "Primer censo moderno", era: "Siglo XIX" },
+            { id: 5, year: 1918, event: "Gripe española", era: "Siglo XX" },
+            { id: 6, year: 1936, event: "Guerra civil", era: "Siglo XX" },
+            { id: 7, year: 1957, event: "Baby boom", era: "Siglo XX" },
+            { id: 8, year: 1975, event: "Muerte de Franco", era: "Siglo XX" },
+            { id: 9, year: 1982, event: "Reconversión industrial", era: "Siglo XX" },
+            { id: 10, year: 2000, event: "Masiva llegada de inmigrantes", era: "Siglo XXI" },
+        ];
+
+        let playerName = "";
+        let dragItem = null;
+        let placeholder = null;
+        let lastExchangeItem = null;
+        
+        // --- VARIABLES PARA AUTO-SCROLL ---
+        let autoScrollSpeed = 0;
+        let autoScrollAnimationFrame = null;
+
+        function startGame() {
+            playerName = document.getElementById('input-name').value;
+            if (!playerName.trim()) return;
+            
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+
+            document.getElementById('player-tag').innerText = playerName;
+            document.getElementById('screen-menu').classList.add('hidden-screen');
+            document.getElementById('screen-game').classList.remove('hidden-screen');
+
+            const shuffled = [...EVENTS_DATA].sort(() => Math.random() - 0.5);
+            renderList(shuffled);
+        }
+
+        function renderList(data) {
+            const container = document.getElementById('sortable-list');
+            container.innerHTML = '';
+            data.forEach((item) => {
+                const el = document.createElement('div');
+                // Se ha añadido la clase card-padding para ajustar el tamaño en móvil
+                el.className = 'sortable-item card-padding bg-white rounded-2xl border-2 border-slate-200 flex items-center gap-4 shadow-sm select-none';
+                el.dataset.id = item.id;
+                el.innerHTML = `
+                    <div class="text-slate-300 pointer-events-none flex-shrink-0">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/></svg>
+                    </div>
+                    <div class="pointer-events-none">
+                        <span class="card-era text-[10px] font-black uppercase text-amber-600 tracking-widest block">${item.era}</span>
+                        <p class="card-title font-bold text-slate-800 leading-tight">${item.event}</p>
+                    </div>
+                `;
+                el.addEventListener('mousedown', startDragging);
+                el.addEventListener('touchstart', startDragging, { passive: false });
+                container.appendChild(el);
+            });
+        }
+
+        function startDragging(e) {
+            // Prevenir scroll nativo inmediato al tocar una tarjeta para que no se "enganche"
+            if (e.type === 'touchstart') {
+                e.preventDefault(); 
+            }
+            
+            sounds.grab();
+            dragItem = e.currentTarget;
+            dragItem.classList.add('dragging');
+
+            // Crear hueco visual
+            placeholder = document.createElement('div');
+            placeholder.className = 'sortable-item placeholder rounded-2xl';
+            placeholder.style.height = `${dragItem.offsetHeight}px`;
+            dragItem.parentNode.insertBefore(placeholder, dragItem.nextSibling);
+
+            // Calcular posición inicial para centrar bajo el dedo si es necesario
+            updateDragPosition(e);
+
+            document.addEventListener('mousemove', onDragging);
+            document.addEventListener('touchmove', onDragging, { passive: false });
+            document.addEventListener('mouseup', stopDragging);
+            document.addEventListener('touchend', stopDragging);
+
+            // Iniciar loop de auto-scroll
+            performAutoScroll();
+        }
+
+        function updateDragPosition(e) {
+            if (!dragItem) return;
+            
+            const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+            const clientX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+            
+            const rect = placeholder.getBoundingClientRect(); // Usar el hueco como referencia de ancho
+            dragItem.style.position = 'fixed';
+            dragItem.style.width = `${rect.width}px`;
+            dragItem.style.left = `${rect.left}px`; // Mantener alineación horizontal con la lista
+            dragItem.style.top = `${clientY - dragItem.offsetHeight / 2}px`;
+        }
+
+        function onDragging(e) {
+            if (!dragItem) return;
+            e.preventDefault(); // Evitar scroll nativo del navegador mientras arrastramos
+
+            const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+            updateDragPosition(e);
+            
+            // --- Lógica de Auto-Scroll ---
+            // Detectar si estamos cerca de los bordes
+            const viewportHeight = window.innerHeight;
+            const edgeThreshold = 100; // px desde el borde para empezar a scrollear
+            const maxScrollSpeed = 15;
+
+            if (clientY < edgeThreshold) {
+                // Cerca del borde superior -> Scroll Arriba
+                // Cuanto más cerca del borde, más rápido
+                const intensity = (edgeThreshold - clientY) / edgeThreshold;
+                autoScrollSpeed = -maxScrollSpeed * intensity;
+            } else if (clientY > viewportHeight - edgeThreshold) {
+                // Cerca del borde inferior -> Scroll Abajo
+                const intensity = (clientY - (viewportHeight - edgeThreshold)) / edgeThreshold;
+                autoScrollSpeed = maxScrollSpeed * intensity;
+            } else {
+                autoScrollSpeed = 0;
+            }
+            // -----------------------------
+
+            const container = document.getElementById('sortable-list');
+            const siblings = [...container.querySelectorAll('.sortable-item:not(.dragging):not(.placeholder)')];
+            
+            // Encontrar elemento bajo el cursor
+            const nextSibling = siblings.find(sibling => {
+                const box = sibling.getBoundingClientRect();
+                return clientY < box.top + box.height / 2;
+            });
+
+            if (nextSibling !== lastExchangeItem) {
+                // Solo reproducir sonido si realmente cambiamos de posición
+                if (lastExchangeItem !== undefined) sounds.move();
+                lastExchangeItem = nextSibling;
+                
+                if (nextSibling) {
+                    container.insertBefore(placeholder, nextSibling);
+                } else {
+                    container.appendChild(placeholder);
+                }
+            }
+        }
+
+        function performAutoScroll() {
+            if (dragItem) {
+                if (autoScrollSpeed !== 0) {
+                    window.scrollBy(0, autoScrollSpeed);
+                }
+                autoScrollAnimationFrame = requestAnimationFrame(performAutoScroll);
+            }
+        }
+
+        function stopDragging() {
+            if (!dragItem) return;
+            sounds.drop();
+            
+            // Detener auto-scroll
+            cancelAnimationFrame(autoScrollAnimationFrame);
+            autoScrollSpeed = 0;
+
+            const container = document.getElementById('sortable-list');
+            dragItem.classList.remove('dragging');
+            dragItem.style.position = '';
+            dragItem.style.width = '';
+            dragItem.style.top = '';
+            dragItem.style.left = '';
+            
+            container.insertBefore(dragItem, placeholder);
+            placeholder.remove();
+            
+            dragItem = null;
+            lastExchangeItem = null;
+            
+            document.removeEventListener('mousemove', onDragging);
+            document.removeEventListener('touchmove', onDragging);
+            document.removeEventListener('mouseup', stopDragging);
+            document.removeEventListener('touchend', stopDragging);
+        }
+
+        function checkResults() {
+            const items = [...document.querySelectorAll('.sortable-item')];
+            let hits = 0;
+
+            items.forEach((el, index) => {
+                const id = parseInt(el.dataset.id);
+                const isCorrect = id === EVENTS_DATA[index].id;
+                if (isCorrect) {
+                    hits++;
+                    el.classList.add('bg-emerald-50', 'border-emerald-500', 'success-flash');
+                    el.classList.remove('bg-rose-50', 'border-rose-500', 'border-slate-200');
+                } else {
+                    el.classList.add('bg-rose-50', 'border-rose-500');
+                    el.classList.remove('bg-emerald-50', 'border-emerald-500', 'border-slate-200');
+                }
+            });
+
+            const liveCounter = document.getElementById('live-counter');
+            liveCounter.classList.remove('hidden');
+            liveCounter.innerText = `Aciertos: ${hits}/10`;
+
+            setTimeout(() => {
+                showFinalScreen(hits);
+            }, 1500);
+        }
+
+        function showFinalScreen(hits) {
+            document.getElementById('screen-game').classList.add('hidden-screen');
+            document.getElementById('screen-result').classList.remove('hidden-screen');
+            
+            const title = document.getElementById('result-title');
+            const scoreEl = document.getElementById('result-score');
+            const congrats = document.getElementById('congrats-text');
+            const iconContainer = document.getElementById('result-icon');
+            
+            scoreEl.innerText = `${hits} de 10 aciertos`;
+
+            if (hits === 10) {
+                sounds.success();
+                title.innerText = "¡IMPECABLE!";
+                congrats.innerText = `¡Enhorabuena, ${playerName}! Tienes un dominio total de la cronología demográfica.`;
+                iconContainer.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="w-20 h-20 text-amber-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/></svg>`;
+            } else if (hits >= 7) {
+                sounds.partial();
+                title.innerText = "¡MUY BIEN!";
+                congrats.innerText = `¡Buen trabajo, ${playerName}! Casi lo tienes perfecto, solo te han faltado unos pocos.`;
+                iconContainer.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="w-20 h-20 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`;
+            } else {
+                sounds.error();
+                title.innerText = "PUEDES MEJORAR";
+                congrats.innerText = `${playerName}, te falta un poco más de práctica con las fechas clave. ¡Inténtalo de nuevo!`;
+                iconContainer.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="w-20 h-20 text-rose-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`;
+            }
+        }
+
+        function resetGame() {
+            if(confirm("¿Quieres reiniciar el orden?")) startGame();
+        }
+    </script>
+</body>
+</html>
